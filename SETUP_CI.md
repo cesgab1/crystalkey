@@ -18,11 +18,19 @@ git init
 git branch -M main
 git add -A
 git commit -m "Crystal Key: verified core, Compose scaffold, CI"
-git remote add origin https://github.com/YOUR-USERNAME/crystalkey.git
+git remote add origin https://github.com/cesgab1/crystalkey.git
 git push -u origin main
 ```
 
-Replace `YOUR-USERNAME`. If git asks who you are:
+If `origin` already exists from an earlier attempt, point it at the right place
+instead of adding it again:
+
+```bat
+git remote set-url origin https://github.com/cesgab1/crystalkey.git
+git remote -v
+```
+
+If git asks who you are:
 
 ```bat
 git config user.email "cesgab1@gmail.com"
@@ -31,6 +39,18 @@ git config user.name  "Cesar"
 
 `local.properties`, `.idea/`, `.gradle/` and `build/` are already gitignored,
 so your SDK path and IDE state stay off GitHub.
+
+### Authentication
+
+GitHub does not accept account passwords over HTTPS. On Windows, Git Credential
+Manager ships with Git and opens a browser window to sign in — do that once and
+it is remembered. If the terminal prompts for a *password* instead, that path
+will fail; use a personal access token as the password, or install Git for
+Windows so the credential manager handles it.
+
+`remote: Repository not found` on a push almost always means one of two things:
+the repo has not been created on GitHub yet, or the URL still has a placeholder
+in it. It is rarely about permissions on a public repo.
 
 ## 3 · Confirm Actions is on
 
