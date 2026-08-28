@@ -1,8 +1,8 @@
 name: build
 
-# The build farm. GitHub-hosted runners already have the Android SDK,
-# unrestricted access to Google's Maven, and KVM — so the emulator job below is
-# the only place in this project where instrumented tests can actually run.
+# The build farm. GitHub-hosted runners have the Android SDK, unrestricted
+# access to Google's Maven, and KVM — so this is the only place in the project
+# where the app can actually be run rather than merely compiled.
 on:
   push:
     branches: [main]
@@ -18,15 +18,13 @@ jobs:
       - uses: actions/setup-java@v5
         with: { distribution: temurin, java-version: '17' }
       - uses: gradle/actions/setup-gradle@v4
-      # Git on Windows does not preserve the Unix executable bit, so gradlew
-      # arrives here as a plain file and `./gradlew` fails with exit code 126.
-      # Setting it in the workflow keeps this working no matter what the file
-      # mode is in the repository.
+      # Windows checkouts do not carry the Unix exec bit, so gradlew can arrive
+      # here as a plain file — that is the "exit code 126" both jobs first died
+      # with. Setting it here keeps this working whatever the file mode is.
       - run: chmod +x ./gradlew
       - name: Run the core verification suite
         run: ./gradlew :core:test --no-daemon
-      - name: Publish the test report on failure
-        if: failure()
+      - if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: core-test-report
@@ -47,8 +45,8 @@ jobs:
           name: crystal-key-debug-apk
           path: app/build/outputs/apk/debug/*.apk
 
-  instrumented:
-    name: app — on an emulator
+  smoke:
+    name: app — launch it and watch
     runs-on: ubuntu-latest
     needs: assemble
     steps:
@@ -62,22 +60,51 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
             | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
-      - uses: reactivecircus/android-emulator-runner@v2
+
+      # The instrumented tests drive composables in their own host activity, so
+      # they never touch MainActivity and cannot reproduce a startup crash.
+      # This installs the real APK, launches the real activity, and reports what
+      # happens — which is the only way to see the black screen from here.
+      - name: Install, launch, and report
+        uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 34
           arch: x86_64
-          # Launches the app and dumps logcat, so a crash on startup shows up
-          # in CI rather than only on a device in someone's hand.
           script: |
-            ./gradlew :app:connectedDebugAndroidTest --no-daemon || true
-            adb logcat -b crash -d > crash.txt || true
-            adb logcat -d -s AndroidRuntime:E > runtime-errors.txt || true
-            echo "----- crash buffer -----"; cat crash.txt
-            echo "----- AndroidRuntime errors -----"; cat runtime-errors.txt
+            set +e
+            ./gradlew :app:installDebug --no-daemon
+            adb logcat -c
+            adb shell am start -W -n com.crystalkey.app/.MainActivity
+            sleep 12
+
+            echo "## App launch" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            echo "--- is anything resumed on screen? ---" >> "$GITHUB_STEP_SUMMARY"
+            adb shell dumpsys activity activities \
+              | grep -iE "mResumedActivity|topResumedActivity|mFocusedApp" \
+              | head -5 >> "$GITHUB_STEP_SUMMARY" 2>&1
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "--- fatal exceptions ---" >> "$GITHUB_STEP_SUMMARY"
+            adb logcat -b crash -d | tail -80 >> "$GITHUB_STEP_SUMMARY" 2>&1
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "--- AndroidRuntime errors ---" >> "$GITHUB_STEP_SUMMARY"
+            adb logcat -d -s AndroidRuntime:E | tail -80 >> "$GITHUB_STEP_SUMMARY" 2>&1
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "--- anything mentioning crystalkey ---" >> "$GITHUB_STEP_SUMMARY"
+            adb logcat -d | grep -i crystalkey | tail -60 >> "$GITHUB_STEP_SUMMARY" 2>&1
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+            echo "## Instrumented tests" >> "$GITHUB_STEP_SUMMARY"
+            ./gradlew :app:connectedDebugAndroidTest --no-daemon > tests.txt 2>&1
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            tail -60 tests.txt >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+            adb exec-out screencap -p > launch.png
+            exit 0
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: device-logs
-          path: |
-            crash.txt
-            runtime-errors.txt
+          name: launch-screenshot
+          path: launch.png
