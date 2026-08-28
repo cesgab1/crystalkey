@@ -1,0 +1,51 @@
+Quest for the Crystal Key ? core verification
+Kotlin/JVM, no Android dependencies. Every assertion below actually ran.
+
+Party rules scale with the room, the puzzle never does
+  ? lantern segments are always players + 1
+  ? cast threshold is 60% of the party, floored at two
+  ? the quiet guard only switches on above four players
+  ? party size is capped at six
+
+The deal ? every seat load-bearing, nobody able to act alone
+      240 deals checked
+  ? across 2?6 seats and 8 seeds, every deal is sound
+  ? no seat can ever hold the whole puzzle
+  ? hand sizes are as even as possible
+  ? the extra atoms go to the seats with the most carry capacity
+  ? a six-year-old always holds exactly one atom at six seats
+  ? the same seed and round give byte-identical deals on every device
+  ? different seeds actually produce different deals
+      double hand by round: [1, 2, 1, 2, 1, 2]
+  ? the double hand moves between rounds instead of parking on one adult
+  ? a child is never handed a double while an adult holds one
+      repeats without freshening: 48, with: 0
+  ? freshening reduces repeat atoms round to round
+
+Turn planning ? rotation, and nobody left quiet
+  ? every seat is the actor exactly once per rotation
+      160 turns planned and checked
+  ? a full rotation never leaves a seat quiet twice running
+  ? no turn can ever be resolved by one phone alone
+  ? an action consumes at least the configured number of atoms
+      idle per turn: [2, 2, 2, 2, 2, 2]
+  ? at six seats, two players really are idle each turn
+
+Meters ? silence is the pressure
+  ? wrath fills when the room goes quiet
+  ? wrath drains while the room is talking
+  ? one neglected player fills wrath, but only above four seats
+  ? the lantern is sized to the party and drops one per failure
+  ? acts inside the beat window count, acts outside it do not
+  ? four of six landing clears the window
+
+Session ? the promises the UI must not be trusted with
+  ? a quest will not start below two seats or with anyone unready
+  ? a dropped phone freezes the quest and rejoining restores it exactly
+  ? pausing holds every phone and resumes to the same place
+  ? a phone dropping during a pause still freezes, and thaws back to paused
+  ? the lantern running out ends the session rather than looping
+  ? a seventh seat cannot squeeze into the lobby
+
+????????????????????????????????????????????????????????????????
+PASS  31 checks, 0 failures
