@@ -19,8 +19,7 @@ jobs:
         with: { distribution: temurin, java-version: '17' }
       - uses: gradle/actions/setup-gradle@v4
       # Windows checkouts do not carry the Unix exec bit, so gradlew can arrive
-      # here as a plain file — that is the "exit code 126" both jobs first died
-      # with. Setting it here keeps this working whatever the file mode is.
+      # as a plain file — that is the "exit code 126" the first runs died with.
       - run: chmod +x ./gradlew
       - name: Run the core verification suite
         run: ./gradlew :core:test --no-daemon
@@ -61,50 +60,30 @@ jobs:
             | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
 
-      # The instrumented tests drive composables in their own host activity, so
-      # they never touch MainActivity and cannot reproduce a startup crash.
-      # This installs the real APK, launches the real activity, and reports what
-      # happens — which is the only way to see the black screen from here.
-      - name: Install, launch, and report
-        uses: reactivecircus/android-emulator-runner@v2
+      # All the logic lives in ci/smoke.sh so it can be changed without editing
+      # this file. Instrumented tests drive composables in their own host
+      # activity and never touch MainActivity, so they cannot reproduce a
+      # startup crash — that is why the script launches the real activity.
+      - uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 34
           arch: x86_64
-          script: |
-            set +e
-            ./gradlew :app:installDebug --no-daemon
-            adb logcat -c
-            adb shell am start -W -n com.crystalkey.app/.MainActivity
-            sleep 12
+          script: bash ci/smoke.sh
 
-            echo "## App launch" >> "$GITHUB_STEP_SUMMARY"
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
-            echo "--- is anything resumed on screen? ---" >> "$GITHUB_STEP_SUMMARY"
-            adb shell dumpsys activity activities \
-              | grep -iE "mResumedActivity|topResumedActivity|mFocusedApp" \
-              | head -5 >> "$GITHUB_STEP_SUMMARY" 2>&1
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "--- fatal exceptions ---" >> "$GITHUB_STEP_SUMMARY"
-            adb logcat -b crash -d | tail -80 >> "$GITHUB_STEP_SUMMARY" 2>&1
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "--- AndroidRuntime errors ---" >> "$GITHUB_STEP_SUMMARY"
-            adb logcat -d -s AndroidRuntime:E | tail -80 >> "$GITHUB_STEP_SUMMARY" 2>&1
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "--- anything mentioning crystalkey ---" >> "$GITHUB_STEP_SUMMARY"
-            adb logcat -d | grep -i crystalkey | tail -60 >> "$GITHUB_STEP_SUMMARY" 2>&1
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
-
-            echo "## Instrumented tests" >> "$GITHUB_STEP_SUMMARY"
-            ./gradlew :app:connectedDebugAndroidTest --no-daemon > tests.txt 2>&1
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
-            tail -60 tests.txt >> "$GITHUB_STEP_SUMMARY"
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
-
-            adb exec-out screencap -p > launch.png
-            exit 0
+      - name: Publish the launch report
+        if: always()
+        run: |
+          echo '## App launch' >> "$GITHUB_STEP_SUMMARY"
+          echo '```text' >> "$GITHUB_STEP_SUMMARY"
+          cat launch-report.txt >> "$GITHUB_STEP_SUMMARY" 2>/dev/null \
+            || echo 'no report produced — the emulator step never ran' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: launch-screenshot
-          path: launch.png
+          name: launch
+          path: |
+            launch-report.txt
+            launch.png
+          if-no-files-found: ignore
